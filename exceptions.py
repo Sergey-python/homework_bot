@@ -1,3 +1,6 @@
+from telegram.error import BadRequest, Unauthorized
+
+
 class EnvVarDoesNotExist(Exception):
     """Ошибка, если переменные окружения не импортировались."""
     pass
@@ -30,3 +33,15 @@ class ApiJsonTypeError(Exception):
 class UnknownHomeworkStatus(Exception):
     """Ошибка, если у домашней работы неизвестный статус проверки."""
     pass
+
+
+class TelegramTokenError(Exception):
+    """Ошибка значения переменной окружения TELEGRAM_TOKEN."""
+    def __str__(self):
+        return 'Некорректный TELEGRAM_TOKEN!'
+
+
+class TelegramChatIdError(Exception):
+    """Ошибка значения переменной окружения TELEGRAM_CHAT_ID."""
+    def __str__(self):
+        return 'Некорректный TELEGRAM_CHAT_ID!'

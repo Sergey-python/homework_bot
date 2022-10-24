@@ -13,7 +13,9 @@ from exceptions import (ApiJsonKeyError,
                         ApiJsonTypeError,
                         EnvVarDoesNotExist,
                         StatusCodeNot200,
-                        UnknownHomeworkStatus)
+                        UnknownHomeworkStatus,
+                        TelegramTokenError,
+                        TelegramChatIdError)
 
 
 load_dotenv()
@@ -48,7 +50,12 @@ def check_correct_obj_keys_and_valuse(json_key_type: dict, obj: dict) -> None:
 
 def send_message(bot, message: str) -> None:
     """Отправка сообщения ботом."""
-    bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message)
+    try:
+        bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message)
+    except Unauthorized:
+        raise TelegramTokenError()
+    except BadRequest:
+        raise TelegramChatIdError()
     logger.info(f'Сообщение ({message[:40]}...) успешно отправлено.')
 
 
@@ -69,7 +76,13 @@ def check_response(response: dict) -> list:
     """Проверка содержимого объекта json из ответа сервиса."""
     json_key_type = {'homeworks': list, 'current_date': int}
     check_correct_obj_keys_and_valuse(json_key_type, response)
-    return response['homeworks']
+    homeworks = response['homeworks']
+    if len(homeworks) == 0:
+        logger.debug(
+            f'За последние {RETRY_TIME} секунд, статус домашних работ '
+            'не изменился!'
+        )
+    return homeworks
 
 
 def parse_status(homework: dict) -> str:
@@ -104,14 +117,12 @@ def main():
         bot = telegram.Bot(token=TELEGRAM_TOKEN)
         logger.info('Осуществлен запуск бота.')
         send_message(bot, 'Бот запущен!')
-    except EnvVarDoesNotExist as error:
+    except (
+        EnvVarDoesNotExist,
+        TelegramTokenError,
+        TelegramChatIdError
+    ) as error:
         logger.critical(error)
-        sys.exit()
-    except Unauthorized:
-        logger.critical('Некорректный TELEGRAM_TOKEN!')
-        sys.exit()
-    except BadRequest:
-        logger.critical('Некорректный TELEGRAM_CHAT_ID!')
         sys.exit()
     except Exception as error:
         logger.critical(error)
@@ -122,27 +133,24 @@ def main():
         try:
             response = get_api_answer(current_timestamp)
             homeworks = check_response(response)
+
             for homework in homeworks:
                 message = parse_status(homework)
                 send_message(bot, message)
             current_timestamp = response['current_date']
 
-        except (ApiJsonKeyError,
-                ApiJsonTypeError,
-                StatusCodeNot200,
-                UnknownHomeworkStatus) as error:
+        except (
+            ApiJsonKeyError,
+            ApiJsonTypeError,
+            StatusCodeNot200,
+            UnknownHomeworkStatus
+        ) as error:
             logger.error(error)
             send_message(bot, error)
         except Exception as error:
             message = f'Сбой в работе программы: {error}'
             logger.error(error)
             send_message(bot, message)
-        else:
-            if len(homeworks) == 0:
-                logger.debug(
-                    f'За последние {RETRY_TIME} секунд, статус домашних работ '
-                    'не изменился!'
-                )
         finally:
             time.sleep(RETRY_TIME)
 
