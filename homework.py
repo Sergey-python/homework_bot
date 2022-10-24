@@ -1,83 +1,160 @@
-...
+from http import HTTPStatus
+import logging
+import os
+import sys
+import time
+
+from dotenv import load_dotenv
+import requests
+import telegram
+from telegram.error import Unauthorized, BadRequest
+
+from exceptions import (ApiJsonKeyError,
+                        ApiJsonTypeError,
+                        EnvVarDoesNotExist,
+                        StatusCodeNot200,
+                        UnknownHomeworkStatus)
+
 
 load_dotenv()
 
+PRACTICUM_TOKEN: str = os.getenv('PRACTICUM_TOKEN')
+TELEGRAM_TOKEN: str = os.getenv('TELEGRAM_TOKEN')
+TELEGRAM_CHAT_ID: str = os.getenv('TELEGRAM_CHAT_ID')
 
-PRACTICUM_TOKEN = ...
-TELEGRAM_TOKEN = ...
-TELEGRAM_CHAT_ID = ...
-
-RETRY_TIME = 600
-ENDPOINT = 'https://practicum.yandex.ru/api/user_api/homework_statuses/'
-HEADERS = {'Authorization': f'OAuth {PRACTICUM_TOKEN}'}
+RETRY_TIME: int = 600
+ENDPOINT: str = 'https://practicum.yandex.ru/api/user_api/homework_statuses/'
+HEADERS: dict = {'Authorization': f'OAuth {PRACTICUM_TOKEN}'}
 
 
-HOMEWORK_STATUSES = {
+HOMEWORK_STATUSES: dict = {
     'approved': 'Работа проверена: ревьюеру всё понравилось. Ура!',
     'reviewing': 'Работа взята на проверку ревьюером.',
     'rejected': 'Работа проверена: у ревьюера есть замечания.'
 }
 
 
-def send_message(bot, message):
-    ...
+def check_correct_obj_keys_and_valuse(json_key_type: dict, obj: dict) -> None:
+    """Проверка содержимого объекта json."""
+    for key, type in json_key_type.items():
+        if key not in obj:
+            raise ApiJsonKeyError(f'У json отсутствует ключ: {key}!')
+        if not isinstance(obj[key], type):
+            raise ApiJsonTypeError(
+                f'У json c ключом {key} ожидался тип: {type},'
+                f'но оказался: {type(obj[key])}!'
+            )
 
 
-def get_api_answer(current_timestamp):
+def send_message(bot, message: str) -> None:
+    """Отправка сообщения ботом."""
+    bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message)
+    logger.info(f'Сообщение ({message[:40]}...) успешно отправлено.')
+
+
+def get_api_answer(current_timestamp: int) -> dict:
+    """Запрос к API сервиса Практикум-Домашка."""
     timestamp = current_timestamp or int(time.time())
     params = {'from_date': timestamp}
+    response = requests.get(ENDPOINT, headers=HEADERS, params=params)
+    if response.status_code != HTTPStatus.OK:
+        raise StatusCodeNot200(response.status_code, ENDPOINT)
+    response = response.json()
+    if isinstance(response, list):
+        response = response[0]
+    return response
 
-    ...
+
+def check_response(response: dict) -> list:
+    """Проверка содержимого объекта json из ответа сервиса."""
+    json_key_type = {'homeworks': list, 'current_date': int}
+    check_correct_obj_keys_and_valuse(json_key_type, response)
+    return response['homeworks']
 
 
-def check_response(response):
-
-    ...
-
-
-def parse_status(homework):
-    homework_name = ...
-    homework_status = ...
-
-    ...
-
-    verdict = ...
-
-    ...
-
+def parse_status(homework: dict) -> str:
+    """
+    Формирование сообщения оповещения при изменении статуса проверки домашней
+    работы.
+    """
+    # json_key_type = {'homework_name': str, 'status': str}
+    # check_correct_obj_keys_and_valuse(json_key_type, homework)
+    homework_name = homework['homework_name']
+    homework_status = homework['status']
+    if homework_status not in HOMEWORK_STATUSES:
+        raise UnknownHomeworkStatus(
+            f'Недокументированный статус домашней работы: {homework_status}!'
+        )
+    verdict = HOMEWORK_STATUSES[homework_status]
     return f'Изменился статус проверки работы "{homework_name}". {verdict}'
 
 
-def check_tokens():
-    ...
+def check_tokens() -> bool:
+    """Проверка корректного импорта переменных окружения."""
+    return all((PRACTICUM_TOKEN, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID))
 
 
 def main():
     """Основная логика работы бота."""
+    try:
+        if not check_tokens():
+            raise EnvVarDoesNotExist(
+                'Проверьте существование переменных окружения!'
+            )
+        bot = telegram.Bot(token=TELEGRAM_TOKEN)
+        logger.info('Осуществлен запуск бота.')
+        send_message(bot, 'Бот запущен!')
+    except EnvVarDoesNotExist as error:
+        logger.critical(error)
+        sys.exit()
+    except Unauthorized:
+        logger.critical('Некорректный TELEGRAM_TOKEN!')
+        sys.exit()
+    except BadRequest:
+        logger.critical('Некорректный TELEGRAM_CHAT_ID!')
+        sys.exit()
+    except Exception as error:
+        logger.critical(error)
+        sys.exit()
 
-    ...
-
-    bot = telegram.Bot(token=TELEGRAM_TOKEN)
     current_timestamp = int(time.time())
-
-    ...
-
     while True:
         try:
-            response = ...
+            response = get_api_answer(current_timestamp)
+            homeworks = check_response(response)
+            for homework in homeworks:
+                message = parse_status(homework)
+                send_message(bot, message)
+            current_timestamp = response['current_date']
 
-            ...
-
-            current_timestamp = ...
-            time.sleep(RETRY_TIME)
-
+        except (ApiJsonKeyError,
+                ApiJsonTypeError,
+                StatusCodeNot200,
+                UnknownHomeworkStatus) as error:
+            logger.error(error)
+            send_message(bot, error)
         except Exception as error:
             message = f'Сбой в работе программы: {error}'
-            ...
-            time.sleep(RETRY_TIME)
+            logger.error(error)
+            send_message(bot, message)
         else:
-            ...
+            if len(homeworks) == 0:
+                logger.debug(
+                    f'За последние {RETRY_TIME} секунд, статус домашних работ '
+                    'не изменился!'
+                )
+        finally:
+            time.sleep(RETRY_TIME)
 
 
 if __name__ == '__main__':
+    logger = logging.getLogger(__name__)
+    logger.setLevel(logging.DEBUG)
+    handler = logging.StreamHandler(sys.stdout)
+    formatter = logging.Formatter(
+        '%(asctime)s, %(levelname)s, %(message)s'
+    )
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+
     main()
