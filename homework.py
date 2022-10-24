@@ -86,10 +86,7 @@ def check_response(response: dict) -> list:
 
 
 def parse_status(homework: dict) -> str:
-    """
-    Формирование сообщения оповещения при изменении статуса проверки домашней
-    работы.
-    """
+    """Получение строки сообщения, если изменился статус проверки д/з."""
     # json_key_type = {'homework_name': str, 'status': str}
     # check_correct_obj_keys_and_valuse(json_key_type, homework)
     homework_name = homework['homework_name']
