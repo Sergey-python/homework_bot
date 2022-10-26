@@ -36,6 +36,7 @@ HOMEWORK_STATUSES: dict = {
 
 
 def get_custom_logger() -> logging.Logger:
+    """Получение кастомного логгера."""
     logger = logging.getLogger(__name__)
     logger.setLevel(logging.DEBUG)
     handler = logging.StreamHandler(sys.stdout)
