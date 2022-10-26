@@ -10,7 +10,6 @@ import telegram
 from dotenv import load_dotenv
 from telegram.error import BadRequest, Unauthorized
 
-from custom_logger import get_custom_logger
 from exceptions import (ApiJsonTypeError,
                         EnvVarDoesNotExist,
                         ResponseObjNotJson,
@@ -34,6 +33,19 @@ HOMEWORK_STATUSES: dict = {
     'reviewing': 'Работа взята на проверку ревьюером.',
     'rejected': 'Работа проверена: у ревьюера есть замечания.'
 }
+
+
+def get_custom_logger() -> logging.Logger:
+    logger = logging.getLogger(__name__)
+    logger.setLevel(logging.DEBUG)
+    handler = logging.StreamHandler(sys.stdout)
+    formatter = logging.Formatter(
+        '%(asctime)s, %(levelname)s, %(message)s'
+    )
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+    return logger
+
 
 logger = get_custom_logger()
 
