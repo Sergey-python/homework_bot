@@ -53,6 +53,8 @@ logger = get_custom_logger()
 
 def check_correct_keys_and_value_types(key_type: dict, obj: dict) -> None:
     """Проверка содержимого объекта json."""
+    if not isinstance(obj, dict):
+        raise TypeError('Пришли некорректные данные от api.')
     for key, type in key_type.items():
         if key not in obj:
             raise KeyError(f'У json отсутствует ключ: {key}!')
@@ -93,8 +95,6 @@ def get_api_answer(current_timestamp: int) -> Union[dict, list]:
 
 def check_response(response: Union[dict, list]) -> list:
     """Получение списка проверенных домашних работ."""
-    if isinstance(response, list):
-        response = response[0]
     key_type = {'homeworks': list, 'current_date': int}
     check_correct_keys_and_value_types(key_type, response)
     homeworks = response['homeworks']
@@ -153,6 +153,7 @@ def main():
                 send_message(bot, message)
         except (
             KeyError,
+            TypeError,
             ApiJsonTypeError,
             StatusCodeNot200,
             UnknownHomeworkStatus,
