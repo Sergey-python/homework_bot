@@ -1,9 +1,8 @@
-from telegram.error import BadRequest, Unauthorized
-
-
 class EnvVarDoesNotExist(Exception):
     """Ошибка, если переменные окружения не импортировались."""
-    pass
+
+    def __str__(self):
+        return super().__str__() or 'Проверьте наличие переменных окружения!'
 
 
 class StatusCodeNot200(Exception):
@@ -14,7 +13,7 @@ class StatusCodeNot200(Exception):
         self.url = url
 
     def __str__(self):
-        return (
+        return super().__str__() or (
             f'По адрессу {self.url} статус код: '
             f'{self.status_code}, ожидался 200!'
         )
@@ -37,11 +36,20 @@ class UnknownHomeworkStatus(Exception):
 
 class TelegramTokenError(Exception):
     """Ошибка значения переменной окружения TELEGRAM_TOKEN."""
+
     def __str__(self):
-        return 'Некорректный TELEGRAM_TOKEN!'
+        return super().__str__() or 'Некорректный TELEGRAM_TOKEN!'
 
 
 class TelegramChatIdError(Exception):
     """Ошибка значения переменной окружения TELEGRAM_CHAT_ID."""
+
     def __str__(self):
-        return 'Некорректный TELEGRAM_CHAT_ID!'
+        return super().__str__() or 'Некорректный TELEGRAM_CHAT_ID!'
+
+
+class ResponseObjNotJson(Exception):
+    """Ошибка, если в ответе от сервиса пришел не json."""
+
+    def __str__(self):
+        return super().__str__() or 'В ответе от сервиса пришел не json.'
