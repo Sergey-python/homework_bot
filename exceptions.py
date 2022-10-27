@@ -1,10 +1,3 @@
-class EnvVarDoesNotExist(Exception):
-    """Ошибка, если переменные окружения не импортировались."""
-
-    def __str__(self):
-        return super().__str__() or 'Проверьте наличие переменных окружения!'
-
-
 class StatusCodeNot200(Exception):
     """Ошибка, если ответ сервера не 200."""
 
@@ -17,16 +10,6 @@ class StatusCodeNot200(Exception):
             f'По адрессу {self.url} статус код: '
             f'{self.status_code}, ожидался 200!'
         )
-
-
-class ApiJsonKeyError(Exception):
-    """Ошибка, если json не имеет требуемых данных."""
-    pass
-
-
-class ApiJsonTypeError(Exception):
-    """Ошибка, если в json некорректные данные."""
-    pass
 
 
 class UnknownHomeworkStatus(Exception):
@@ -46,6 +29,17 @@ class TelegramChatIdError(Exception):
 
     def __str__(self):
         return super().__str__() or 'Некорректный TELEGRAM_CHAT_ID!'
+
+
+class BotSendMessageError(Exception):
+    """Ошибка во время отправки сообщения в телеграм."""
+
+    def __init__(self, error):
+        self.error = error
+
+    def __str__(self):
+        return super().__str__() or ('Во время отправки сообщения в телеграм произошел сбой! '
+                                     f'Ошибка: {self.error}')
 
 
 class ResponseObjNotJson(Exception):

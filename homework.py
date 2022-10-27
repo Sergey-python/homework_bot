@@ -1,3 +1,4 @@
+from json import JSONDecodeError
 import logging
 import os
 import sys
@@ -10,13 +11,12 @@ import telegram
 from dotenv import load_dotenv
 from telegram.error import BadRequest, Unauthorized
 
-from exceptions import (ApiJsonTypeError,
-                        EnvVarDoesNotExist,
-                        ResponseObjNotJson,
+from exceptions import (ResponseObjNotJson,
                         StatusCodeNot200,
                         TelegramChatIdError,
                         TelegramTokenError,
-                        UnknownHomeworkStatus)
+                        UnknownHomeworkStatus,
+                        BotSendMessageError)
 
 load_dotenv()
 
@@ -24,7 +24,7 @@ PRACTICUM_TOKEN: str = os.getenv('PRACTICUM_TOKEN')
 TELEGRAM_TOKEN: str = os.getenv('TELEGRAM_TOKEN')
 TELEGRAM_CHAT_ID: str = os.getenv('TELEGRAM_CHAT_ID')
 
-RETRY_TIME: int = 600
+RETRY_TIME: int = 60000
 ENDPOINT: str = 'https://practicum.yandex.ru/api/user_api/homework_statuses/'
 HEADERS: dict = {'Authorization': f'OAuth {PRACTICUM_TOKEN}'}
 
@@ -51,20 +51,6 @@ def get_custom_logger() -> logging.Logger:
 logger = get_custom_logger()
 
 
-def check_correct_keys_and_value_types(key_type: dict, obj: dict) -> None:
-    """Проверка содержимого объекта json."""
-    if not isinstance(obj, dict):
-        raise TypeError('Пришли некорректные данные от api.')
-    for key, type in key_type.items():
-        if key not in obj:
-            raise KeyError(f'У json отсутствует ключ: {key}!')
-        if not isinstance(obj[key], type):
-            raise ApiJsonTypeError(
-                f'У json c ключом {key} ожидался тип: {type},'
-                f'но оказался: {type(obj[key])}!'
-            )
-
-
 def send_message(bot, message: str) -> None:
     """Отправка сообщения ботом."""
     try:
@@ -73,7 +59,9 @@ def send_message(bot, message: str) -> None:
         raise TelegramTokenError()
     except BadRequest:
         raise TelegramChatIdError()
-    message = message if len(message) < 40 else message[:40] + '...'
+    except Exception as error:
+        raise BotSendMessageError(error)
+    message = message[:40] + (message[40:] and '...')
     logger.info(f'Сообщение ({message}) успешно отправлено в телеграмм.')
 
 
@@ -81,23 +69,34 @@ def get_api_answer(current_timestamp: int) -> Union[dict, list]:
     """Запрос к API сервиса Практикум-Домашка."""
     timestamp = current_timestamp or int(time.time())
     params = {'from_date': timestamp}
+
+    logger.debug(f'Делаем запрос к api по адрессу: {ENDPOINT}')
     response = requests.get(ENDPOINT, headers=HEADERS, params=params)
-    logger.debug(f'Сделан запрос к api по адрессу: {ENDPOINT}')
+    logger.debug('Получили ответ от сервера.')
 
     if response.status_code != HTTPStatus.OK:
         raise StatusCodeNot200(response.status_code, ENDPOINT)
     try:
         response = response.json()
-    except Exception:
+    except JSONDecodeError:
         raise ResponseObjNotJson()
     return response
 
 
 def check_response(response: Union[dict, list]) -> list:
     """Получение списка проверенных домашних работ."""
-    key_type = {'homeworks': list, 'current_date': int}
-    check_correct_keys_and_value_types(key_type, response)
-    homeworks = response['homeworks']
+    try:
+        homeworks = response['homeworks']
+        current_date = response['current_date']
+    except KeyError as error:
+        raise KeyError(f'У объекта json отсутствует ключ: {error.args[0]}!')
+    except TypeError:
+        raise TypeError('Пришли некорректные данные от api.')
+
+    if not isinstance(homeworks, list):
+        raise TypeError('У объекта json у ключа homeworks неверный тип!')
+    if not isinstance(current_date, int):
+        raise TypeError('У объекта json у ключа current_date неверный тип!')
 
     if not homeworks:
         logger.debug(
@@ -110,33 +109,49 @@ def check_response(response: Union[dict, list]) -> list:
 
 def parse_status(homework: dict) -> str:
     """Получение строки сообщения об изменении статуса проверки д/з."""
-    key_type = {'homework_name': str, 'status': str}
-    check_correct_keys_and_value_types(key_type, homework)
-    homework_name = homework['homework_name']
-    homework_status = homework['status']
+    try:
+        homework_name = homework['homework_name']
+        homework_status = homework['status']
+    except KeyError as error:
+        raise KeyError(f'У объекта json отсутствует ключ: {error.args[0]}!')
+    except TypeError:
+        raise TypeError('Пришли некорректные данные от api.')
+
+    if not isinstance(homework_name, str):
+        raise TypeError('У объекта json у ключа homework_name неверный тип!')
+    if not isinstance(homework_status, str):
+        raise TypeError('У объекта json у ключа status неверный тип!')
 
     if homework_status not in HOMEWORK_STATUSES:
         raise UnknownHomeworkStatus(
             f'Недокументированный статус домашней работы: {homework_status}!'
         )
     verdict = HOMEWORK_STATUSES[homework_status]
-    logger.debug(f'Вердикт ревьюера: {verdict}')
-    return f'Изменился статус проверки работы "{homework_name}". {verdict}'
+    message = f'Изменился статус проверки работы "{homework_name}". {verdict}'
+    logger.debug(message)
+    return message
 
 
 def check_tokens() -> bool:
     """Проверка корректного импорта переменных окружения."""
-    return all((PRACTICUM_TOKEN, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID))
+    logger.debug('Проверяется импорт переменных окружения.')
+    if all((PRACTICUM_TOKEN, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID)):
+        logger.debug('Переменные окружения успешно импортированны.')
+        return True
+    return False
 
 
 def main():
     """Основная логика работы бота."""
+    if not check_tokens():
+        logger.critical('Проверьте наличие переменных окружения!')
+        sys.exit()
     try:
-        if not check_tokens():
-            raise EnvVarDoesNotExist()
         bot = telegram.Bot(token=TELEGRAM_TOKEN)
         logger.info('Осуществлен запуск бота.')
         send_message(bot, 'Бот запущен!')
+    except BotSendMessageError as error:
+        logger.error(error)
     except Exception as error:
         logger.critical(error)
         sys.exit()
@@ -145,25 +160,14 @@ def main():
     while True:
         try:
             response = get_api_answer(current_timestamp)
-            current_timestamp = response.get('current_date')
             homeworks = check_response(response)
-
             for homework in homeworks:
                 message = parse_status(homework)
                 send_message(bot, message)
-        except (
-            KeyError,
-            TypeError,
-            ApiJsonTypeError,
-            StatusCodeNot200,
-            UnknownHomeworkStatus,
-            ResponseObjNotJson
-        ) as error:
-            message = f'Сбой программы: {error}'
-            logger.error(error)
-            send_message(bot, message)
+
+            current_timestamp = response.get('current_date')
         except Exception as error:
-            message = f'Сбой программы, неизвестная ошибка: {error}'
+            message = f'Сбой программы: {error}'
             logger.error(error)
             send_message(bot, message)
         finally:
