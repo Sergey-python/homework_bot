@@ -6,7 +6,7 @@ class StatusCodeNot200(Exception):
         self.url = url
 
     def __str__(self):
-        return super().__str__() or (
+        return (
             f'По адрессу {self.url} статус код: '
             f'{self.status_code}, ожидался 200!'
         )
@@ -38,8 +38,8 @@ class BotSendMessageError(Exception):
         self.error = error
 
     def __str__(self):
-        return super().__str__() or ('Во время отправки сообщения в телеграм произошел сбой! '
-                                     f'Ошибка: {self.error}')
+        return ('Во время отправки сообщения в телеграм произошел сбой! '
+                f'Ошибка: {self.error}')
 
 
 class ResponseObjNotJson(Exception):
