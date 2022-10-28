@@ -24,7 +24,7 @@ PRACTICUM_TOKEN: str = os.getenv('PRACTICUM_TOKEN')
 TELEGRAM_TOKEN: str = os.getenv('TELEGRAM_TOKEN')
 TELEGRAM_CHAT_ID: str = os.getenv('TELEGRAM_CHAT_ID')
 
-RETRY_TIME: int = 60000
+RETRY_TIME: int = 600
 ENDPOINT: str = 'https://practicum.yandex.ru/api/user_api/homework_statuses/'
 HEADERS: dict = {'Authorization': f'OAuth {PRACTICUM_TOKEN}'}
 
@@ -135,10 +135,7 @@ def parse_status(homework: dict) -> str:
 def check_tokens() -> bool:
     """Проверка корректного импорта переменных окружения."""
     logger.debug('Проверяется импорт переменных окружения.')
-    if all((PRACTICUM_TOKEN, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID)):
-        logger.debug('Переменные окружения успешно импортированны.')
-        return True
-    return False
+    return all((PRACTICUM_TOKEN, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID))
 
 
 def main():
@@ -146,6 +143,8 @@ def main():
     if not check_tokens():
         logger.critical('Проверьте наличие переменных окружения!')
         sys.exit()
+    logger.debug('Переменные окружения успешно импортированны.')
+
     try:
         bot = telegram.Bot(token=TELEGRAM_TOKEN)
         logger.info('Осуществлен запуск бота.')
